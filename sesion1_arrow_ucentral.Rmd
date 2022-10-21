@@ -1,0 +1,119 @@
+s---
+title: "Clase 1"
+author: "José Fernando Zea"
+date: '2022-10-20'
+output: html_documsent
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(arrow)
+library(dplyr)
+library(readxl)
+library(tictoc)
+```
+
+```{r}
+df <- open_dataset("parquet/personas")
+```
+
+```{r}
+nrow(df);ncol(df)
+names(df)
+```
+Lazy evaluation, antes del collect
+```{r}
+tic()
+consulta1 <- df %>% group_by(U_DPTO) %>%
+  summarise(cuenta = n()) %>% 
+  collect() %>%
+  arrange(desc(cuenta))
+toc()
+```
+
+
+```{r}
+df %>% head() %>% collect()
+```
+
+
+
+a) Calcular los municipios (20) con mayor número de residentes afuera del país hace 5 años.
+b)  Calcular los municipios (20) con mayor proporción de residentes afuera del país hace 5 años.
+
+```{r}
+divipola <- read_excel("DIVIPOLA.xlsx")
+```
+
+
+* Seleccione variables
+* Agrupar por el departamento y municipio
+* Contar cuantas personas vivían afuera del país hace 5 años
+* Contar la población
+* Calcular la proporción de habitantes de afuera hace 5 años
+
+```{r}
+tic()
+consulta2 <- df %>% 
+  select(U_DPTO, U_MPIO, PA_VIVIA_5ANOS) %>%
+  group_by(U_DPTO, U_MPIO, PA_VIVIA_5ANOS) %>% 
+  summarise(cuenta = n()) %>% collect() %>%
+  ungroup() %>% group_by(U_DPTO, U_MPIO) %>%
+  mutate(total_pob = sum(cuenta)) %>%
+  filter(PA_VIVIA_5ANOS == 4) %>%
+  mutate(porc_perAfuera = round(100 * cuenta / total_pob, 2))
+toc()
+```
+
+
+```{r}
+tic()
+consulta2 <- df %>% 
+  select(U_DPTO, U_MPIO, PA_VIVIA_5ANOS) %>%
+  group_by(U_DPTO, U_MPIO, PA_VIVIA_5ANOS) %>% 
+  summarise(cuenta = n()) %>% collect() %>%
+  ungroup() %>% group_by(U_DPTO, U_MPIO) %>%
+  mutate(total_pob = sum(cuenta)) %>%
+  filter(PA_VIVIA_5ANOS == 4) %>%
+  mutate(porc_perAfuera = 
+           round(100 * cuenta / total_pob, 2),
+         codigo_municipio =  
+           paste0(U_DPTO, U_MPIO)) %>%
+  left_join(divipola, by = "codigo_municipio") %>%
+  arrange(desc(porc_perAfuera))
+
+ consulta2 <- consulta2[,c("codigo_municipio", "nombre_municipio","nombre_departamento",
+  "PA_VIVIA_5ANOS", "cuenta", "total_pob", 
+"porc_perAfuera")] 
+toc()
+```
+
+
+
+
+¿Calcular la proporción de madres menores de 19 por grupo étnico?
+
+
+```{r}
+tic()
+consulta3 <- df %>% 
+  select(P_EDADR, PA2_HNVH, P_SEXO, PA1_GRP_ETNIC) %>% 
+  mutate(grupo_etnico = ifelse(PA1_GRP_ETNIC %in% 3:5, 
+                                    "Afrodescendiente",
+                               ifelse(PA1_GRP_ETNIC == 1, "Indigena",
+                               ifelse(PA1_GRP_ETNIC == 2, "Gitano",
+                               ifelse(PA1_GRP_ETNIC == 6, "Ninguno",
+                                      NA_character_))))) %>%
+  filter(P_SEXO == 2 &  P_EDADR <= 4) %>% 
+  mutate(tiene_hijo = ifelse(PA2_HNVH %in% 1:25, 1, 0)) %>% group_by(grupo_etnico) %>%
+  summarise(total_personas = n(), 
+            total_personas_hijos = sum(tiene_hijo)) %>%
+collect() %>% 
+  mutate(pror_menoresHijos = 100 * total_personas_hijos / total_personas)
+toc()  
+  
+```
