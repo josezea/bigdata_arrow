@@ -1,0 +1,73 @@
+---
+title: "Sesion 1 (grupo 2)"
+author: "José Fernando Zea"
+date: '2022-10-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(arrow)
+library(dplyr)
+library(readxl)
+library(tictoc)
+```
+Leer la base de personas del censo de población 2018:
+
+
+```{r}
+divipola <- read_excel("DIVIPOLA.xlsx")
+```
+
+
+```{r}
+datos <- open_dataset("parquet/personas")
+dim(datos)
+```
+
+
+```{r}
+names(datos)
+```
+
+```{r}
+# datos %>% collect()
+# collect(datos)
+```
+
+
+1. Ejercicio: Calcular la población por municipio: 
+
+```{r}
+tic()
+consulta1 <- datos %>% group_by(U_DPTO, U_MPIO) %>% count() %>%
+  collect() %>% mutate(codigo_municipio = paste0(U_DPTO, U_MPIO)) %>%
+  left_join(divipola)
+toc()
+```
+
+
+Calcular el alfabetismo por departamentos
+* Tome los datos luego agrupe por departamento y P_ALFABETA y realice un conteo. Luego, calcule el total de personas por departamento,
+Filtre los que tenga P_ALFABETA = 1 y realice el cociente
+total_grupo / total_poblacion
+
+```{r}
+tic()
+consulta2 <- datos %>% group_by(U_DPTO, P_ALFABETA) %>%
+  count() %>% collect() %>% group_by(U_DPTO) %>% 
+  mutate(N_dpto = sum(n)) %>% filter(P_ALFABETA == 1) %>%
+  mutate(tasa_alfab = n / N_dpto) %>% arrange(desc(tasa_alfab)) %>%
+  select(-P_ALFABETA)
+toc()
+```
+
+
+
+3. Calcular el embarazo juvenil / adolescente por departamento
+
+Edad, Número de hijos, departamento
+U_DPTO
