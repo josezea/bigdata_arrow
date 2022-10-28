@@ -1,0 +1,248 @@
+---
+title: "Taller 2"
+author: "José Fernando Zea"
+date: '2022-10-09'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(arrow)
+library(dplyr)
+library(readxl)
+library(tictoc)
+library(flextable)
+```
+
+
+
+```{r}
+setwd("Censo/censo_unificado/parquet")
+vivienda_lazy <- open_dataset("viviendas")
+hogares_lazy <- open_dataset("hogares")
+personas_lazy <- open_dataset("personas")
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Lectura de zonas metropolitanas
+df_zonasMetropolitanas <- read_excel("Censo/zonas_metropolitanas.xlsx")
+
+# Lectura de divipola
+df_divipola <- read_excel("Censo/DIVIPOLA.xlsx")
+names(df_divipola)[1:2] <- c("cod_dpto", "cod_mpio")
+df_divipola$tipo_municipio <- NULL
+```
+
+
+```{r}
+vivienda_lazy <- vivienda_lazy %>% select(COD_ENCUESTAS, U_DPTO, U_MPIO, UA_CLASE, VA1_ESTRATO) %>%
+  mutate(cod_mpio = paste0(U_DPTO, U_MPIO))
+
+personas_lazy <- personas_lazy %>% select(COD_ENCUESTAS, P_NROHOG, P_NRO_PER, P_EDADR, P_NIVEL_ANOSR)
+```
+
+
+Construimos la tabla de todos los municipios con la información de zonas metropolitanas y la variable de unidades geográficas:
+
+Le agregemos la zona metropolitana:
+
+```{r}
+df_geografico <- left_join(df_divipola, df_zonasMetropolitanas, by = "cod_mpio") %>%
+   mutate(unidad_geografica = ifelse(is.na(unidad_geografica), 
+          paste0(nombre_municipio, "-", nombre_departamento ),
+                                     unidad_geografica),
+          codigo_unidad_geografica = ifelse(is.na(codigo_unidad_geografica), 
+         cod_mpio, codigo_unidad_geografica) 
+                                     ) %>% collect()
+          
+```
+  
+
+a. Presente el número de filas de la anterior tabla.
+
+```{r}
+nrow(df_geografico)
+```
+
+b. Calcule el número total de unidades geográficas conformadas
+
+```{r}
+length(unique(df_geografico$unidad_geografica))
+```
+
+Hay un total de 1084 unidades geográficas.
+
+
+
+
+2. Lleve a cabo la integración de la población de cada municipio a la tabla de municipios – zonas metropolitanas resultante del punto 1 y realice las siguientes consultas:
+a. Calcule la población urbana (clase = 1) para cada una de las unidades geográficas (zonas metropolitanas o municipios según sea el caso), guarde la tabla y presente en el documento la población de las unidades geográficas en su parte urbana que acumulen más del 70% de la población de la población.
+
+
+Nota: considere para la población del país el total de personas en todo el país (tanto en zona urbana como rural), la población de las unidades geográficas considérela solo para la parte urbana.
+
+```{r}
+perviv<- personas_lazy %>% left_join(vivienda_lazy %>%
+                              left_join(df_geografico, by = "cod_mpio"),
+  by = "COD_ENCUESTAS")
+```
+
+Se calcula el 70% de la población colombiana:
+
+```{r}
+tic()
+umbral <- round(0.7 * (perviv %>% count() %>% collect())) # Para hallar los 30918795
+toc()
+```
+
+
+Se calcula la población en todas las unidades geográficas:
+```{r}
+tic()
+consulta1 <- perviv %>% filter(UA_CLASE == 1) %>% 
+  group_by(codigo_unidad_geografica, unidad_geografica) %>%
+  summarise(num_personas = n()) %>% arrange(desc(num_personas)) %>% collect()
+consulta1$num_personasAcum <- cumsum(consulta1$num_personas) # Consultas en tabla pequeña
+consulta1 <- consulta1 %>%  filter(num_personasAcum <= umbral) 
+# 
+toc()
+```
+
+
+```{r}
+flextable(bind_rows(head(consulta1), tail(consulta1)))
+```
+
+
+3.	Genere una tabla a nivel de viviendas ocupadas (viviendas que tengan al menos una persona) ubicadas en la zona urbana (clase = 1) con información del estrato socioeconómico e intégrele a la tabla de municipios – zonas metropolitanas resultante del punto 1. Una vez disponga de esta tabla guárdela y realice los siguientes puntos:
+Recodifique el estrato socioeconómico en niveles socioeconómicos bajo (0, 1, 2), medio (3 y 4) y alto (5, 6) y no informa (NA, 99 y códigos asociados a información faltante). 
+
+
+```{r}
+vivienda_lazy %>% group_by(VA1_ESTRATO) %>% count() %>% collect() %>% arrange(VA1_ESTRATO)
+```
+
+```{r}
+# Recodificamos el estrato socioeconómico:
+vivienda_lazy <- vivienda_lazy %>%
+                 mutate(estrato_recod = ifelse(VA1_ESTRATO %in% 0:2, "1. Bajo",
+                 ifelse(VA1_ESTRATO %in% 3:4, "2. Medio", 
+                 ifelse(VA1_ESTRATO %in% 5:6, "3. Alto", "4. No informa"))))        
+vivienda_lazy %>% group_by(estrato_recod) %>% count() %>% collect() %>% arrange(estrato_recod)
+                        
+```
+
+Conservamos la tabla de vivienda sólo para las unidades geográficas del punto 1:
+
+```{r}
+df_geografica_selec <- df_geografico %>% filter(codigo_unidad_geografica %in% unique(consulta1$codigo_unidad_geografica))
+```
+
+
+a.	Calcule una tabla de frecuencias absolutas y relativas del nivel socioeconómico para las viviendas ocupadas de la zona urbana (clase = 1). 
+
+En primer lugar idenficamos las viviendas ocupadas
+
+```{r}
+viviendas_ocupadas <- personas_lazy %>% group_by(COD_ENCUESTAS) %>% summarise(cuenta = n()) %>% collect()
+table(viviendas_ocupadas$cuenta == 0)
+```
+
+Todas las viviendas que aparecen son ocupadas, tienen al menos una persona.
+
+```{r}
+tic()
+consulta3A <- vivienda_lazy %>% filter(cod_mpio %in% unique(df_geografica_selec$cod_mpio)) %>%
+  group_by(estrato_recod) %>% summarise(Frecuencia = n()) %>% collect() %>%
+  mutate(FrecRel = round(100 * Frecuencia / sum(Frecuencia), 1)) %>% arrange(estrato_recod)
+toc()
+consulta3A %>% flextable()
+```
+
+b.	Presente una tabla con la distribución del estrato socioeconómico para las viviendas ocupadas de la zona urbana en las 7 zonas metropolitanas.
+
+
+```{r}
+consulta3B <- vivienda_lazy %>% right_join(df_geografica_selec, by = "cod_mpio") %>%
+  filter(codigo_unidad_geografica %in% 
+                         c("00001", "00002", "00003", "00004", "00005", "00006", "00007")) %>%
+   group_by(estrato_recod, unidad_geografica) %>% summarise(Frecuencia = n()) %>%
+  collect() %>% ungroup() %>% group_by(unidad_geografica) %>% 
+  mutate(total = sum(Frecuencia), FrecRel = round(100 * Frecuencia / total, 1)) 
+
+  
+consulta3B <- data.table::dcast(data = consulta3B,
+                                formula = unidad_geografica ~ estrato_recod,
+                                value.var = "FrecRel")
+flextable(consulta3B)
+```
+
+
+4.	Conforme una tabla con las personas mayores de 25 años ubicadas en la zona urbana (clase = 1) con información del máximo nivel educativo alcanzado. 
+Recodifique el nivel educativo en tres categorías: “Con educación técnica o superior” y “Sin educación superior o técnica” y “Sin Información” La primera categoría conformada por personas que han culminado educación en uno de los siguientes tres niveles “Técnica profesional o Tecnológica”, “Universitario” o “Especialización, maestría o doctorado”. Guarde esta tabla.
+
+
+```{r}
+personas_lazy <- personas_lazy %>% filter(P_EDADR >= 6) %>% 
+  mutate(NivelEducRecod = ifelse(P_NIVEL_ANOSR %in% 1:6, "Sin educación superior o técnica",
+  ifelse(P_NIVEL_ANOSR %in% 7:9, "Con educación técnica o superior", "Sin información"))) 
+```
+
+a.	¿Cuál es la proporción de personas “Con educación técnica o superior” y “Sin educación superior o técnica” y “Sin Información”?
+
+```{r}
+consulta4A <- personas_lazy %>% group_by(NivelEducRecod) %>% summarise(Frec = n()) %>% collect()
+consulta4A <- consulta4A %>% mutate(Prop = Frec / sum(Frec))
+consulta4A %>% flextable()
+```
+
+b.	Presente una tabla con la distribución del nivel educativo para las personas ubicadas en la zona urbana y las 7 zonas metropolitanas.
+
+```{r, warning=FALSE, message=FALSE}
+consulta4B <- personas_lazy %>% left_join(vivienda_lazy) %>%
+  left_join(df_geografica_selec) %>%
+  group_by(codigo_unidad_geografica, unidad_geografica, NivelEducRecod) %>% 
+  summarise(Frec = n()) %>%
+  filter(codigo_unidad_geografica %in% 
+          c("00001", "00002", "00003", "00004", "00005", "00006", "00007")) %>%
+  collect() %>% mutate(Prop = round(100 * Frec / sum(Frec), 1))
+consulta4B <- data.table::dcast(data = consulta4B, unidad_geografica ~ NivelEducRecod,
+                                value.var = "Prop")
+consulta4B %>% flextable::flextable()
+```
+
+
+
+
+
+5. Considera la población de mayores de 25 años ubicados en las unidades geográficas que acumulan en su parte urbana más del 70% de la población del país. Haga uso de las tablas generadas en los puntos anteriores y demás tablas necesarias para desarrollar los siguientes puntos:
+a. Al interior de cada una de las zonas geográficas seleccionadas y cada estrato socioeconómico calcule el porcentaje de personas mayores de 25 años ubicadas en la zona urbana (clase 1) que han culminados sus estudios de educación técnica superior, que no han culminado los anteriores estudios o para los cuales no hay información.
+Para mayor facilidad genere la siguiente tabla para las unidades geográficas seleccionadas (acumulan en su parte urbana más del 70% de la población del país.):
+
+
+```{r}
+consulta5 <- personas_lazy %>% left_join(vivienda_lazy) %>%
+  left_join(df_geografica_selec) %>%
+  group_by(unidad_geografica, estrato_recod, NivelEducRecod) %>% 
+  summarise(Frec = n()) %>%  ungroup() %>% collect() %>%
+  group_by(unidad_geografica, estrato_recod) %>%
+  mutate(total = sum(Frec), Prop = round(100 * Frec / total, 1))
+consulta5B <- data.table::dcast(data = consulta5, 
+                                unidad_geografica + estrato_recod ~ NivelEducRecod,
+                                value.var = "Prop")
+consulta5B <- consulta5B %>% filter(estrato_recod == "1. Bajo") %>%
+              arrange(desc(`Sin educación superior o técnica`))
+```
+
+
+
+Las 5 unidades geográficas con mayores proporciones de personas sin educación técnica o superior son los siguientes:
+
+
+```{r}
+consulta5B %>% slice(1:5) %>% flextable::flextable()
+```
+
