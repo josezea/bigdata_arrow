@@ -1,0 +1,176 @@
+---
+title: "Clase 3 Big Data"
+author: "José Fernando Zea"
+date: '2022-10-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(arrow) # Librería en C++ trabaja paralero para procesar datos
+library(dplyr) # Procesar datos (small data)
+library(readxl) # Leer un archivo de excel
+library(tictoc) # Tomar tiempos
+library(data.table)  # Procesar datos (small data), ultrarapido
+```
+
+```{r}
+df <- open_dataset("parquet/personas")
+```
+
+```{r}
+df_armenia <- df %>% 
+  filter(U_DPTO == "63" & U_MPIO == "001") %>% collect()
+```
+
+```{r}
+tic()
+fwrite(df_armenia, "df_armenia.csv")
+toc()
+```
+
+
+Ejercicio generar varios archivos en formato parquet para poder hacer computación distribuida.
+
+Recuerda los parquet son:
+* Archivo binario
+* Ocupa poco espacio
+* Permite computación distribuida
+* Row - based
+* Se almacenan en datalake (S3, Google Storage, Azure Storage)
+Tarea: profundizar en los archivos parquet.
+* Competencia: Avro, csv distribuidos
+
+
+```{r}
+getwd()
+dir()
+```
+
+
+```{r}
+source("f_csv_parquet.R")
+```
+
+
+```{r}
+write_chunk_data(data_path = "df_armenia.csv", output_dir = "parquet_armenia",  chunk_size = 50000) 
+#chunk_size: es el # de registro en que quiero particionarl el csv
+```
+
+
+Realizar un benchmark entre la eficiencia en R y arrow:
+
+```{r}
+df_armenia_arrow <- open_dataset("parquet_armenia" )
+#a <- head(df_armenia_arrow) %>% collect()
+```
+
+```{r}
+# dplyr
+tic()
+temp2 <- df_armenia %>% group_by(P_EDADR) %>% summarise(cuenta = n())
+toc()
+```
+
+
+```{r}
+df_armenia <- as.data.table(df_armenia)
+tic()
+temp3 <- df_armenia[,.N,by = P_EDADR]
+toc()
+```
+
+
+```{r}
+#arrow
+tic()
+temp2 <- df_armenia_arrow %>% group_by(P_EDADR) %>% 
+  summarise(cuenta = n()) %>% collect()
+toc()
+```
+
+
+Calcular el nivel educativo por estrato socieconómico: para las personas mayores de 24 años calcular la proporción que tienen niveles de educación técnica, superior o posgrados por estrato socioeconómico y solo la parte urbana del país.
+
+
+Vivendas
+COD_ENCUESTAS
+UA_CLASE es 1
+VA1_ESTRATO
+
+
+Personas
+COD_ENCUESTAS
+P_EDADR >= 6
+P_NIVEL_ANOSR 7 a 9 
+
+
+```{r}
+df_personas <- open_dataset("parquet/personas")
+df_viviendas <- open_dataset("parquet/viviendas")
+
+```
+
+
+```{r}
+tic()
+consulta1 <- df_personas %>% select(COD_ENCUESTAS, P_EDADR, P_NIVEL_ANOSR) %>% left_join(df_viviendas %>% 
+           select(COD_ENCUESTAS, UA_CLASE, VA1_ESTRATO),
+           by = "COD_ENCUESTAS") %>%
+  filter(P_EDADR >= 6 & UA_CLASE == 1) %>% 
+  mutate(indica_educaTecSup = ifelse(P_NIVEL_ANOSR %in% 7:9, 1, 0)) %>%
+  group_by(VA1_ESTRATO) %>% 
+  summarise(propSuperior = mean(indica_educaTecSup)) %>%
+  collect()
+toc()  
+```
+
+Un join por dos variables:
+df1 %>% left_join(df2, by = c("var1", "var2"))
+
+df1: var1 var2
+df2: VAR1, VAR2
+
+df1 %>% left_join(df2, by = c("var1" = "VAR1, "var2" = "VAR2"))
+
+
+
+Ejercicios:
+2. Ejercicio: nivel de escolaridad de las zonas rurales. 
+(adultos >= 18 al menos con el bachillerato completo)
+
+```{r}
+
+tic()
+consulta2 <- df_personas %>% select(P_NIVEL_ANOSR, UA_CLASE) %>%
+  mutate(indica_bachiller =  ifelse(P_NIVEL_ANOSR %in% 4:9, 1, 0)) %>%
+  group_by(UA_CLASE) %>% 
+  summarise(prop_bachilleres = mean(indica_bachiller)) %>% collect()
+toc()
+consulta2
+```
+
+
+3. Proporción de Desempleo femenino en la ruralidad desagregado por 
+estado civil
+
+P_TRABAJO == 4
+P_EST_CIVIL
+P_SEXO == 2
+
+
+```{r}
+tic()
+consulta3 <- df_personas %>% select(P_TRABAJO,P_EST_CIVIL,P_SEXO,UA_CLASE, P_EDADR) %>%
+  filter(P_SEXO == 2 & UA_CLASE %in% 2:3 & P_EDADR %in% 4:21) %>%  
+  mutate(desocupado=  ifelse(P_TRABAJO == 4,1,0), 
+         ocupado=  ifelse(P_TRABAJO %in% 1:3,1,0)) %>%
+  group_by(P_EST_CIVIL) %>% 
+  summarise(razon_desempleo = sum(ocupado)/sum(desocupado)) %>% collect()
+toc()
+```
+
