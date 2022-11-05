@@ -1,0 +1,364 @@
+---
+title: "Duck DB"
+author: "José Fernando Zea"
+date: '2022-11-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(arrow) # Librería en C++ trabaja paralelo para procesar datos
+library(duckdb) # Paquete para manejar base de datos duckdb
+library(dbplyr) # Consultas en dplyr para un motor de bases de datos
+library(dplyr) # Procesar datos (small data)
+library(DBI) # Hacer conexiones a bases de datos (Duckdb, Oracle, 
+#Mysql, MariaDB, Posgres, Slqserver, redshift, bigquery)
+library(tictoc) # Tomar tiempos
+```
+
+ ```{r}
+# R version 4.2.0 (2022-04-22 ucrt)
+ 
+# other attached packages:
+#  [1] survey_4.1-1             survival_3.3-1          
+#  [3] Matrix_1.4-1             tidyr_1.2.0             
+#  [5] writexl_1.4.0            flextable_0.7.0         
+#  [7] samplesize4surveys_4.1.1 timeDate_3043.102       
+#  [9] TeachingSampling_4.1.1   magrittr_2.0.3          
+# [11] srvyr_1.1.1              labelled_2.9.1          
+# [13] haven_2.5.0              pacman_0.5.1            
+# [15] tictoc_1.0.1             dplyr_1.0.9             
+# [17] dbplyr_2.2.1             arrow_8.0.0             
+# [19] duckdb_0.3.4-1           DBI_1.1.3  
+# sessionInfo()
+```
+
+
+# Ingestar datos de csv a duckdb
+
+
+* csv / txt / tsv a la base de datos
+* parquet / avro / orc a la base de datos
+* Daframe de R/python (pandas) a la base de datos
+* Json a la base de datos
+
+
+Ingestar datos a duckdb (csv a duckdb), Ingestamos el archivo de viviendas de Armenia:
+
+```{r}
+# Lectura a archivo csv a una base duckdb 
+
+# Crear una conexión a una base duckdb
+con <- DBI::dbConnect(drv = duckdb::duckdb(), 
+                      dbdir = "basedatos1")
+
+duckdb_read_csv(con,
+               name = "personas_armenia_duckdb", 
+               files = "datos_armenia.csv")
+
+# Ingestamos un dataframe
+dbWriteTable(con, "iris", iris)
+
+# Listamos las tablas
+duckdb::dbListTables(con)
+```
+
+Ejercicio: contar la gente de Armentia con SQL:
+
+```{r}
+cadenasql <- "
+  SELECT count(*) as N
+  FROM personas_armenia_duckdb 
+  "
+consulta1 <- dbGetQuery(con, cadenasql)
+consulta1
+```
+
+```{r}
+cadenasql2 <- "
+  SELECT *
+  FROM personas_armenia_duckdb 
+  LIMIT 6
+"
+consulta2 <- as_tibble(dbGetQuery(con, cadenasql2))
+consulta2
+```
+
+
+```{r}
+# Contar cuantos bebes hay de sexo masculino y femenino
+cadenasql3 <- "
+  SELECT P_SEXO, COUNT(*) AS N_bebes
+  FROM personas_armenia_duckdb 
+  WHERE P_EDADR = 1 
+  GROUP BY P_SEXO
+"
+consulta3 <- as_tibble(dbGetQuery(con, cadenasql3))
+consulta3
+```
+
+Realizamos las consultas 1 , 2 y 3 en dplyr:. El primer paso es registrar la tabla como un objeto tipo duckdb
+
+```{r}
+personas_armenia_duckdb <- tbl(con, "personas_armenia_duckdb")
+```
+
+```{r}
+class(personas_armenia_duckdb)
+```
+
+
+```{r}
+consulta1A <- personas_armenia_duckdb %>% count() %>% collect()
+consulta1A1 <- personas_armenia_duckdb %>% 
+  summarise(Cuenta = n()) %>% collect()
+```
+
+```{r}
+consulta2A <- personas_armenia_duckdb %>% collect()
+```
+   R      SQL    
+* select: select
+* filter: where
+* group_by: group by
+* arrange: order by
+* mutate: create table as (cuando no hay group by), crear una columna
+* summarise: create table as (cuando SI hay group by o quiero una agregacion de un numero); estadística resumen
+* slice: seleccionar filas por indices o nombres columna
+* n(): count(*)
+
+
+```{r}
+personas_armenia_duckdb %>% 
+  filter(P_EDADR == 1) %>% # 0 a 5 años
+   summarise(cuenta_bebes = n()) %>%
+  collect()
+```
+
+
+```{r}
+consulta3A <- personas_armenia_duckdb %>% 
+  filter(P_EDADR == 1) %>% # 0 a 5 años
+  group_by(P_SEXO) %>% summarise(cuenta_bebes = n()) %>%
+  collect()
+```
+
+
+```{r}
+consulta3A1 <- personas_armenia_duckdb %>% 
+  filter(P_EDADR == 1) %>% # 0 a 5 años
+  group_by(P_SEXO) %>% count() %>%
+  collect()
+```
+
+Puedo ver la consulta que se mando en SQL a la base de datos:
+
+```{r}
+personas_armenia_duckdb %>% 
+  filter(P_EDADR == 1) %>%
+  group_by(P_SEXO) %>% count() %>% show_query()
+```
+
+# Lectura de una tabla de un parquet
+
+Leemos el archivo parquet como formato arrow
+
+```{r}
+df_personas <- open_dataset("parquet/personas")
+```
+
+Creamos una conexión y registramos la tabla 
+
+```{r}
+con2 <- DBI::dbConnect(duckdb::duckdb(), dbdir = "duckdb2")
+df_personas_duck <- to_duckdb(df_personas, con2, 
+                              "personas_duck")
+# duckdb::dbListTables(con2)
+# Los archivos en arrow no se guardan en la bse de datos
+
+```
+
+Podemos registrar realizar las consultas de interés:
+
+```{r}
+sql <- "
+  SELECT count(*) as N
+  FROM personas_duck 
+"
+as_tibble(dbGetQuery(con2, sql))
+```
+
+Si no le coloco el as.tibble:
+
+```{r}
+dbGetQuery(con2, sql)
+```
+Calculemos el número de persons por municipiO:
+
+```{r}
+# df_personas_duck %>% head() %>% collect()
+sql <- "
+  SELECT U_DPTO, U_MPIO, count(*) as N
+  FROM personas_duck 
+  GROUP BY U_DPTO, U_MPIO   
+  ORDER BY N DESC
+"
+consulta4 <-  as_tibble(dbGetQuery(con2, sql))
+```
+
+
+En dplyr también  podemos hacer las consultas que se quieran:
+
+```{r}
+df_personas_duck %>% count() %>% collect()
+```
+
+Contar el número de personas por municipio
+
+```{r}
+tic()
+consulta5 <- df_personas_duck %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% arrange(desc(n)) %>% collect()
+consulta5
+toc()
+```
+
+
+Ejercicio en sql en duckdb
+
+1) Calcular los municipio con mayor tasa femenina (10 primeros)
+(En duckdb)
+(la proporción de mujeres / total munic)
+
+
+
+```{r}
+#P_SEXO, U_DPTO, U_MPIO       
+consulta <- df_personas_duck %>% 
+  group_by(U_DPTO, U_MPIO, P_SEXO) %>% 
+  summarise(cuenta = n()) %>% ungroup() %>% 
+  group_by(U_DPTO, U_MPIO) %>%
+  mutate(totalpob = sum(cuenta)) %>% ungroup() %>%
+  filter(P_SEXO == 2) %>% collect() %>%
+  mutate(razon_femenina = cuenta / totalpob) %>%
+  arrange(desc(razon_femenina)) %>% slice(1:10)
+```
+
+
+# Combinación de arrow y duckdb
+
+No siempre es posible trabajar siempre arrow pues no todo es paralelizable.
+
+
+
+```{r}
+# No lo puedes hacer en arrow por que trabaja en paralelo
+# df_personas %>% filter(U_DPTO == "63" & U_MPIO == "001") %>%  ungroup() %>%
+#   mutate(id = row_number()) %>% collect()
+ #Va a salir error
+```
+En duckdb si está soportado las operaciones no paralizables:
+
+```{r}
+consulta_secuencia <- df_personas %>% to_duckdb() %>%
+  filter(U_DPTO == "63" & U_MPIO == "001") %>%  ungroup() %>%    mutate(id = row_number()) %>% collect()
+ #Va a salir error
+```
+
+
+```{r}
+consulta7 <-  df %>% ungroup() %>% to_duckdb() %>% arrange(desc(n)) %>%
+  mutate(id = row_number()) %>% 
+   collect()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+df <- df_personas %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% arrange(desc(n))
+```
+
+
+Por ejemplo si quiero rezagar arrow no soporta esta función (rezagamos n)
+
+
+```{r}
+df %>% mutate(n_rezgada = lag(n))
+```
+
+En este caso hago viajar la tabla a una tabla virtual duckdb y hago la operación:
+
+
+```{r}
+consulta6 <- df %>% to_duckdb() %>% arrange(desc(n)) %>% dplyr::mutate(n_rezgada = dplyr::lag(n)) %>% collect()
+```
+
+
+
+
+
+
+
+
+Ejercicio en sql
+
+1) Calcular los municipio con mayor tasa femenina (10 primeros)
+(En duckdb)
+
+
+```{r}
+con3 <- DBI::dbConnect(duckdb::duckdb(), dbdir = "duckdb3")
+df_personas_duck <- to_duckdb(df_personas, con3, 
+                              "personas_duck")
+```
+
+
+```{r}
+consutla <- df_personas_duck %>% group_by(U_DPTO, U_MPIO, P_SEXO) %>% count() %>% collect() %>%
+  group_by(U_DPTO, U_MPIO) %>%
+  mutate(totpob = sum(n), tasa =  n / totpob) %>%
+  filter(P_SEXO == 2)  %>% arrange(desc(tasa)) %>%
+    slice(1:10) %>%  select(U_DPTO, U_MPIO, tasa)
+```
+
+
+
+```{r}
+sql <- "
+SELECT * 
+FROM(SELECT U_DPTO, U_MPIO, count(*) as N
+  FROM personas_duck 
+  WHERE (p_sexo =2)
+  GROUP BY  U_DPTO, U_MPIO   
+  ORDER BY N DESC) a
+JOIN SELECT U_DPTO, U_MPIO, SUM(N)  AS TOTALPOB
+FROM TABLA1
+GROUP BY  U_DPTO, U_MPIO B
+ON a.u_dpto = b.u_dpto and a.u_mpio = b.mpio  
+"
+a <- as_tibble(dbGetQuery(con3, sql))
+
+```
+
