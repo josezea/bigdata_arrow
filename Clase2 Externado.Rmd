@@ -1,0 +1,118 @@
+---
+title: "Clase 2"
+output: html_document
+date: '2022-11-05'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(pacman)
+pacman::p_load(dplyr, readxl, arrow, data.table, tictoc)
+```
+
+
+```{r}
+df_personas <- open_dataset("parquet/personas") 
+dim(df_personas)
+```
+Cuanticar la población por municipio
+
+R         sql
+select: select
+filter: where
+arrange: order by
+summarise: create table as (cuando se quiere una 
+estadistica resumen o agregación)
+mutate: create table (cuando se crea nueva columna)
+n(): count(*)
+
+
+```{r}
+tic()
+consulta1 <- df_personas %>% 
+  group_by(U_DPTO, U_MPIO) %>% 
+  summarise(poblacion = n()) %>% 
+  ungroup() %>%
+  arrange(desc(poblacion)) %>%
+  collect()
+toc()
+```
+Tasa de población femenina por municipio
+U_DPTO, U_MPIO, P_SEXO
+
+```{r}
+tic()
+consulta2 <- df_personas %>% 
+  group_by(U_DPTO, U_MPIO, P_SEXO) %>%
+  summarise(pob_sexo = n()) %>% collect() %>% 
+  ungroup() %>%
+    group_by(U_DPTO, U_MPIO) %>%
+  mutate(poblacion = sum(pob_sexo)) %>%
+  filter(P_SEXO == 2) %>% 
+  mutate(razonFem = pob_sexo / poblacion) %>%
+  arrange(desc(razonFem))
+toc()
+```
+
+Sacar para cada estrato socioeconómico el porcentaje de
+personas con educación tecnica /tecnológico, universitaria
+o posgrados para la población urbana del país mayor a 25 años.
+
+```{r}
+viviendas <- open_dataset("parquet/viviendas")
+dim(viviendas)
+```
+
+```{r}
+tic()
+consulta3 <- left_join(select(df_personas, COD_ENCUESTAS,
+                  P_NIVEL_ANOSR, P_EDADR),
+          select(viviendas, COD_ENCUESTAS, VA1_ESTRATO,
+                 UA_CLASE), by = c("COD_ENCUESTAS")) %>%
+  filter(UA_CLASE == 1 &  P_EDADR >=6) %>%
+  mutate(indica_educaSupTec = as.numeric(P_NIVEL_ANOSR %in% 6:9)) %>%
+  ungroup() %>% 
+  group_by(VA1_ESTRATO) %>% 
+  summarise(porc_educasupTec = round(100 * mean(indica_educaSupTec), 2)) %>%
+  collect() %>% arrange(VA1_ESTRATO)
+  toc()
+```
+
+```{r}
+consulta3 %>% slice(1:7)
+```
+
+
+
+
+
+Sacar para cada estrato socioeconómico el porcentaje y valor de
+personas con educación tecnica /tecnológico, universitaria
+o posgrados para la población urbana del país mayor a 25 año por sexo
+
+
+```{r}
+tic()
+consulta4 <- left_join(select(df_personas, COD_ENCUESTAS,
+                  P_NIVEL_ANOSR, P_EDADR, P_SEXO),
+          select(viviendas, COD_ENCUESTAS, VA1_ESTRATO,
+                 UA_CLASE), by = c("COD_ENCUESTAS")) %>%
+  filter(UA_CLASE == 1 &  P_EDADR >=6) %>%
+  mutate(indica_educaSupTec = as.numeric(P_NIVEL_ANOSR %in% 6:9)) %>%
+  ungroup() %>% 
+  group_by(VA1_ESTRATO, P_SEXO) %>% 
+  summarise(total = sum(indica_educaSupTec)) %>%
+  collect() %>% arrange(VA1_ESTRATO)
+  toc()
+```
+```{r}
+library(reshape2)
+consulta4 <- dcast(data = consulta4, formula =  VA1_ESTRATO ~ P_SEXO,
+      value.var = "total")
+      
+```
+
