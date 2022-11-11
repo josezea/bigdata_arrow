@@ -1,0 +1,303 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: '2022-07-02'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(DBI)
+library(duckdb)
+library(tidyverse)
+library(tictoc)
+```
+
+## Bases de datos
+Una base de datos puede pensarse con una coleción de dataframes llamada tablas en la terminología de las bases de datos. Hay tres diferencias entre las tablas de una base de datos y un dataframe.
+
+
+* Las tablas de las bases de datos se almacenan en disco y puede ser arbitrariamente eficientes, por otro lado los dataframes están limitados por la memoria Ram.
+* Las tablas de las bases de datos están almacenadas endisco con lo cual las busqueda de las filas de interés son muy rápidas (similar a data.table).
+* Las tablas de las bases de datos son orientadas a las filas, los dataframes a las columnas. Sin embargo ha habido desarrolado de bases de datos orientados a columnas.
+
+
+Los sistemas de bases de datos (DBSM) vienen en tres formatos diferentes:
+
+* Cliente - servidor: ejecutados en un poderoso servidor central el cual uno conecta desde el computador (cliente). Son muy eficientes para compartir datos en una organización, Algunas populares son PostgreSQL, MariaDB, SQL Server y Oracle.
+
+* Nubes: administradoras de bases de datos como Snowflake, Amazon Redshift, Big Query, Azure Synapse Analytics.
+* En proceso: bases de datos como SQLite, o duckdb que se ejecutan totalmente en el computador.
+
+* DuckDB es un sistema de administración de baes de datos relacional (orientado a tablas) que soporte SQL diseñado para analítica, en particular consultas OLAP (online analytical processing= muy orientadas a Big Data. Tiene procesamiento vectorizado lo cual lo hace bastante rápido. DuckDb adopta los principios de simplicidad de SQLite de instalación (no tiene dependencias externas) y de integrarse a equipos locales. Puede trabajar sobre disco duro.
+
+
+duckdb crea en memoria temporal las bases de datos:
+
+```{r}
+con <- DBI::dbConnect(duckdb::duckdb())
+# con = dbConnect(duckdb::duckdb(), dbdir=":memory:")
+```
+
+Para guardar la base de datos en el disco, tanto para lectura como escritura: 
+
+```{r}
+con = dbConnect(duckdb::duckdb(), dbdir="duckdb", read_only=FALSE)
+```
+
+
+Guardaremos las dos tablas:
+
+```{r}
+dbWriteTable(con, "mpg", ggplot2::mpg)
+dbWriteTable(con, "diamonds", ggplot2::diamonds)
+```
+
+
+```{r}
+dbListTables(con)
+```
+
+```{r}
+dbExistsTable(con, "diamonds")
+dbExistsTable(con, "foo")
+```
+
+Para cargar una tabla en el disco duro (si esta no es muy grande):
+
+```{r}
+con %>% dbReadTable("diamonds") 
+```
+
+En la vida real es extraño que se use dbReadTable() debido a que en ocasiones las tablas son muy grandes.
+
+# Consultas en lenguaje SQL
+
+Una vez tenida las consultas se pueden hacer consultas en sql:
+
+```{r}
+sql <-  "
+SELECT carat, cut, clarity, color, price 
+  FROM diamonds 
+  WHERE price > 15000
+"
+```
+
+```{r}
+dbGetQuery(con, sql) %>% as.tibble()
+```
+
+
+# Consultas en dplyr
+
+Con la función tbl se puede cargar la tabla para dejarla lista para hacer consultas en dplyr:
+
+```{r}
+diamonds_db <- dplyr::tbl(con, "diamonds")
+diamonds_db
+```
+
+
+```{r}
+big_diamonds_db <- diamonds_db |> 
+  filter(price > 15000) |> 
+  select(carat:clarity, price)
+```
+
+```{r}
+big_diamonds_db %>%  show_query()
+```
+
+```{r}
+big_diamonds_db %>% collect()
+```
+
+# Leer archivos en csv
+
+```{r}
+data(iris)
+write.csv(iris, "iris.csv")
+```
+
+Leer duckdb:
+
+```{r}
+duckdb::duckdb_read_csv(con, "iris_duckdb", "iris.csv")
+dbListTables(con)
+#dbReadTable(con, "iris_duckdb") # No recomendado por que carga en R
+```
+
+
+```{r}
+iris_duckdb <- dplyr::tbl(con, "iris_duckdb")
+iris_duckdb
+```
+
+```{r}
+iris_duckdb %>% 
+  filter(Sepal.Length > 4.6) %>% 
+  select(Sepal.Length, Sepal.Width) %>% head()
+```
+
+Si quiero mandarlo a un disco duro; le hago un collect:
+
+```{r}
+iris_duckdb %>% 
+  filter(Sepal.Length > 4.6) %>% 
+  select(Sepal.Length, Sepal.Width) %>% collect()
+```
+
+
+# Segunda parte
+
+```{r}
+DBI::dbDisconnect(con)
+rm(list = ls())
+```
+
+
+```{r, eval = FALSE}
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver   = "[your driver's name]",
+                      Server   = "[your server's path]",
+                      UID      = rstudioapi::askForPassword("Database user"),
+                      PWD      = rstudioapi::askForPassword("Database password"),
+                      Port     = 3306)
+```
+
+
+```{r}
+# https://community.rstudio.com/t/dbplyr-summarize-without-a-group-by/116466/6
+library(DBI)
+library(RMariaDB)
+# library(RMySQL)
+library(dbplyr)
+library(dplyr)
+library(rstudioapi)
+
+# Connect to the MySQL database: con
+
+con <- dbConnect(RMariaDB::MariaDB(), # RMySQL::MySQL(), 
+                 dbname = "classicmodels", 
+                 host = "localhost", # 192.1.34.2 ficticia
+                 port = 3306,
+                 user = "root", 
+                 password =  rstudioapi::askForPassword("Database password")
+                 ) 
+# clave
+```
+
+
+```{r}
+# # Get table names
+tables <- dbListTables(con)
+# Display structure of tables
+str(tables)
+```
+
+
+```{r}
+customers_db <- tbl(con, "customers")
+customers_db
+```
+
+Contar el número de registros:
+
+```{r}
+customers_db %>% summarise(cuenta = n()) %>% collect()
+```
+
+```{r}
+customers_db %>% summarise(cuenta = n()) %>% show_query()
+
+```
+
+Contemos cuantas empresas hay por país y calculemos el promedio del cupo
+máximo de la tarjeta de crédito (creditLimit)
+
+```{r}
+comsulta1 <- customers_db %>% group_by(country) %>%
+  summarise(cuenta = n(), prom_cupo = mean(creditLimit)) %>% collect()
+flextable::flextable(comsulta1)
+```
+ Miremos el código en SQL:
+
+```{r}
+comsulta1 <- customers_db %>% group_by(country) %>%
+  summarise(cuenta = n(), prom_cupo = mean(creditLimit)) %>% show_query()
+```
+
+
+Seleccionar el ID del cliente, el nombre del cliente, el país, y el cupo, y ordenar por país (alfabeticamente) y cupo de mayor a menor
+
+```{r}
+comsulta1 <- customers_db %>% select(customerNumber, customerName, country, creditLimit)%>% arrange(country, desc(creditLimit))%>% collect()
+flextable::flextable(comsulta1)
+```
+
+
+
+```{r}
+cadenasql <- "
+  SELECT count(*) as N
+  FROM customers 
+  "
+dbGetQuery(con, cadenasql)
+```
+
+```{r}
+sql <- "
+SELECT `country`, COUNT(*) AS `cuenta`, AVG(`creditLimit`) AS `prom_cupo`
+FROM `customers`
+GROUP BY `country`
+"
+dbGetQuery(con, sql)
+```
+
+```{r}
+comsulta1 <- customers_db %>% select(customerNumber, customerName, country, creditLimit)%>% arrange(country, desc(creditLimit))%>% show_query()
+```
+
+
+# Escribir en la base de datos
+
+```{r}
+data(iris)
+summary(iris)
+```
+
+
+```{r}
+dbWriteTable(con, "iris", iris)
+
+```
+
+
+Vamos agregar una columna de 1's a la tabla de clientes y escribirla en SQL SERVER
+
+```{r}
+customer <- customers_db %>% mutate(unos = 1) %>% collect()
+dbWriteTable(con, "customer", customer)
+  
+```
+
+
+
+Ejecutar en SQL calcular el promedio del cupo por país (sentencia en sql)
+
+
+```{r}
+sql <- "
+SELECT COUNTRY, AVG(creditlimit) as prom_cupo
+FROM customers
+GROUP BY COUNTRY
+"
+consulta2 <- dbGetQuery(con, sql) %>% collect()
+consulta2
+```
+
+
