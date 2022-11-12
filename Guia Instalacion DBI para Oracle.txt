@@ -1,0 +1,31 @@
+
+Instalación Oracle y DBI
+
+Seguir estas indicaciones crear las variables de entorno arriba y abajo, clave la variable de entorno 
+https://technology.amis.nl/languages/r/r-and-the-oracle-database-using-dplyr-dbplyr-with-roracle-on-windows-10/
+
+Este post ayuda a complementar:
+https://medium.com/analytics-vidhya/how-to-install-roracle-on-windows-10-144b0b923dac
+
+1) Bajar los zip adecuados
+Las URL donde se encuentran los archivos para descargar son:
+https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html
+
+Bajar este archivo instantclient-basic-windows.x64-21.6.0.0.0dbru.zip
+
+2) Toca descomprimirla en la carpeta C:\oracle\instantclient_21_6 (el nombre de las carpetas fue arbitrario guiado por
+lo que queda al descomprimir) y ahí meter
+ también la carpeta instantclient-sdk-windows.x64-21.6.0.0.0dbru.zip (descomprimida)
+
+3) definir las variables de entorno indicadas en el post (ojo definir las variables de entorno abajo y arriba, 
+es particulamente muy importante la variable de entorno llamada OCI_LIB64 = C:\oracle\instantclient_21_6
+
+
+4) Copiar ociver.h file de instantclient_18_3\sdk\include aC:\Program Files\R\R-3.5.1\inc
+R-3.5.1: respectiva versión de R
+https://community.oracle.com/tech/developers/discussion/4190984/roracle-installation-issues-compilation-error-r3-5-1-on-windows
+
+
+5) Instalar el paquete ROracle (modo compilado, los pasos necesarios son fundamentales si no no funcionan 
+
+Instalar DBI

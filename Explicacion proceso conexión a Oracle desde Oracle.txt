@@ -1,0 +1,19 @@
+1) Seguir estas instruciones: https://www.oracle.com/co/database/technologies/instant-client/winx64-64-downloads.html#ic_winx64_inst
+(de la página principal se descargan b y c, ultimas versiones), a) se busca en Google.
+
+1. Descargar de acuerdo a las indicaciones b, c y d, a) Instalador del cliente de oracle
+
+a) sqldeveloper-22.2.0.173.2018-x64
+b) instantclient-basic-windows.x64-21.6.0.0.0dbru
+c) instantclient-odbc-windows.x64-21.6.0.0.0dbru
+d) VC_redist.x64
+
+Opcional para conectarse con conectores ODBC de Rstudio:
+
+3) Escribir en  cmd la carpeta donde se coloco todo descomprimido de b) y c):
+
+cd C:\oracle\instantclient_21_6
+Darle el siguiente comando : odbc_install
+Con este comando instalamos a odbc la posibilidad de hacer conexiones en Oracle. Una vez instalado 
+Ir a odbc origenes de datos 64 bits (lo buscamos con la tecla Windows). Con esto ya nos queda la opción de hacer conexiones
+desde Rstudio.
