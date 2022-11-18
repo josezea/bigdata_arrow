@@ -1,0 +1,92 @@
+
+---
+title: "clase5_spark"
+output:
+  html_document:
+    toc: true
+---
+
+
+```{r}
+library(sparklyr)
+library(dplyr)
+```
+
+
+```{r}
+sc <- spark_connect(method = "databricks")
+df_spark <- spark_read_csv(sc = sc, name = 'df_armenia', path = "/FileStore/tables/df_armenia.csv")
+
+```
+
+
+```{r}
+sparklyr::sdf_schema(df_spark)
+
+```
+
+
+```{r}
+# dim(df_spark)
+sdf_dim(df_spark)
+#sdf_nrow(df_spark)
+#sdf_ncol(df_spark)
+```
+
+
+```{r}
+class(df_spark)
+```
+
+
+```{r}
+#names(df_spark)
+tbl_vars(df_spark)
+```
+
+
+```{r}
+
+consulta1 <- df_spark %>% group_by(U_DPTO, U_MPIO) %>% count(P_ALFABETA) %>% collect()
+```
+
+
+```{r}
+head(consulta1)
+
+```
+
+
+```{r}
+# Que sintaxis de sql utilicé:
+consulta1 <- df_spark %>% group_by(U_DPTO, U_MPIO) %>% count(P_ALFABETA) %>% show_query()
+
+```
+
+
+```{r}
+# SQL
+sdf_register(x = df_spark, name = "armenia")
+
+```
+
+
+```{r}
+consulta2 <- sdf_sql(sc, "
+         SELECT U_MPIO, U_DPTO, P_ALFABETA, count(*) as N
+          FROM armenia 
+          GROUP BY U_MPIO, U_DPTO, P_ALFABETA
+")
+consulta2
+```
+
+
+```{r}
+consulta2 %>% collect()
+```
+
+
+```{r}
+setwd("/FileStore/tables")
+```
+
