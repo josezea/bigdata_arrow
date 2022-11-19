@@ -1,0 +1,88 @@
+
+---
+title: "clase5_grupo"
+output:
+  html_document:
+    toc: true
+---
+
+
+```{r}
+library(sparklyr)
+library(dplyr)
+```
+
+
+```{r}
+sc <- spark_connect(method = "databricks")
+df_spark <- spark_read_csv(sc = sc, name = 'df_armenia', path = "/FileStore/tables/datos_armenia.csv")
+df_spark
+```
+
+
+```{r}
+sparklyr::sdf_schema(df_spark)
+```
+
+
+```{r}
+# dim(df_spark)
+sdf_dim(df_spark)
+#sdf_nrow(df_spark)
+#sdf_ncol(df_spark)
+```
+
+
+```{r}
+class(df_spark)
+```
+
+
+```{r}
+tbl_vars(df_spark)
+```
+
+
+```{r}
+consulta <- df_spark %>% group_by(P_ALFABETA) %>% summarise(cuenta = n()) %>% arrange(P_ALFABETA) %>% collect()
+head(consulta)
+```
+
+
+```{r}
+df_spark %>% group_by(P_ALFABETA) %>% summarise(cuenta = n()) %>% arrange(P_ALFABETA) %>% show_query()
+```
+
+
+```{r}
+# Ejercicio
+#Calculen la población de hombres y mujeres mayores de 25 años que tienen al #menos educación superior en Armenia (tecnica / tecnológica en adelante).
+```
+
+
+```{r}
+ejercicio1 <- df_spark %>% filter(P_EDADR > 5 & P_NIVEL_ANOSR >6 & P_NIVEL_ANOSR<=9) %>% group_by(P_SEXO) %>% summarise(poblacion = n()) %>% collect()
+ejercicio1
+```
+
+
+```{r}
+sdf_register(x = df_spark, name = "armenia")
+```
+
+
+```{r}
+# Sacar las personas por nivel educativo
+consulta2 <- sdf_sql(sc, "
+          SELECT U_MPIO, U_DPTO, P_ALFABETA, count(*) as N
+          FROM armenia 
+          GROUP BY U_MPIO, U_DPTO, P_ALFABETA
+")
+consulta2 %>% head()
+```
+
+
+```{r}
+consulta2 %>% collect() %>% head()
+```
+
