@@ -1,0 +1,223 @@
+---
+title: "Clase Externado"
+output: html_document
+date: '2022-11-19'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_knit$set(root.dir = "C:/Users/salacomputoh509/Desktop/Nueva carpeta/Nueva carpeta")
+
+```
+
+
+```{r}
+dir()
+```
+
+
+```{r}
+library(arrow) # Librería en C++ trabaja paralero para procesar datos
+library(duckdb) # Paquete para manejar base de datos duckdb
+library(dbplyr) # Consultas en dplyr para un motor de bases de datos
+library(dplyr) # Procesar datos (small data)
+library(DBI)
+library(tictoc) # Tomar tiempos
+```
+
+Creamos la conexión a la base de datos:
+
+```{r}
+conex <- DBI::dbConnect(duckdb::duckdb(), dbdir = "base_armenia")
+```
+
+
+
+
+```{r}
+duckdb_read_csv(conn = conex,
+               name  = "personas_armenia_duckdb", 
+               files  = "datos_armenia.csv")
+```
+
+
+```{r}
+duckdb::dbListTables(conex)
+
+```
+
+Ingestamos un dataframe que ya exista en mi ambiente
+
+```{r}
+data(iris)
+head(iris)
+```
+
+
+Listamos las dos tablas de la base de datos:
+
+```{r}
+duckdb::dbListTables(conex)
+
+```
+Puedo realizar consultas en la base de datos duckdb (no en RAM) y el resultado me lo envía a la memoria RAM:
+
+
+```{r}
+cadenasql <- "
+  SELECT count(*) as N
+  FROM personas_armenia_duckdb 
+"
+consulta1 <- dbGetQuery(conex, cadenasql)
+consulta1
+```
+
+Miremos los 6 primeros registros:
+
+```{r}
+cadenasql2 <- "
+  SELECT  *
+  FROM personas_armenia_duckdb 
+  LIMIT 6
+"
+consulta2 <- dbGetQuery(conex, cadenasql2)
+consulta2
+```
+
+
+Contar el número de personas alfabetas y analfabetas:
+
+```{r}
+cadenasql3 <- "
+  SELECT P_ALFABETA,  COUNT(*) as N
+  FROM personas_armenia_duckdb 
+  WHERE P_ALFABETA IN (1, 2)
+  GROUP BY P_ALFABETA
+"
+consulta3 <- dbGetQuery(conex, cadenasql3)
+consulta3
+```
+
+
+
+```{r}
+# Contar cuantos bebes hay de sexo masculino y femenino
+# P_EDADR = 1  0 a 5 años 
+cadenasql4 <- "
+  SELECT P_SEXO, COUNT(*) AS N_bebes
+  FROM personas_armenia_duckdb 
+  WHERE P_EDADR = 1 
+  GROUP BY P_SEXO
+"
+consulta4 <- as_tibble(dbGetQuery(conex, cadenasql4))
+consulta4
+```
+
+
+Realizar consultas en dplyr:
+
+
+```{r}
+datos <- tbl(conex, "personas_armenia_duckdb")
+datos
+```
+
+Contar el número de personas alfabetas y analfabetas:
+
+```{r}
+datos %>% dplyr::filter(P_ALFABETA %in% c(1, 2)) %>% group_by(P_ALFABETA) %>%
+  count(id = "Cuenta") %>% collect()
+```
+
+```{r}
+datos %>% dplyr::filter(P_ALFABETA %in% c(1, 2)) %>% group_by(P_ALFABETA) %>%
+  count(id = "Cuenta") %>% show_query()
+```
+
+Ingestamos censo:
+
+
+```{r}
+df_personas <- open_dataset("parquet/personas")
+```
+
+
+```{r}
+tic()
+consulta5 <- df_personas %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% arrange(desc(n)) %>% collect()
+consulta5
+toc()
+```
+
+```{r}
+#df_personas <- df_personas %>% mutate(secuencia = row_number())
+#df_personas %>% head() %>% collect() %>% relocate(secuencia, .after = "TIPO_REG")
+
+```
+
+
+Creamos una conexión y registramos la tabla 
+
+```{r}
+con2 <- DBI::dbConnect(duckdb::duckdb(), dbdir = "colombia")
+df_personas_duck <- to_duckdb(df_personas, con2, 
+                              "personas_duck")
+```
+
+
+```{r}
+df_personas_duck %>% count() %>% collect()
+
+```
+Se pueden usar windows functions:
+
+```{r}
+df_personas_duck <- df_personas_duck %>% mutate(secuencia = row_number())
+df_personas_duck %>% head() %>% collect() %>% relocate(secuencia, .after = "TIPO_REG")
+```
+
+
+```{r}
+df_personas_duck %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% arrange(desc(n)) %>% ungroup() %>% count()
+```
+
+Población por municipio
+
+```{r}
+tic()
+consulta5b <- df_personas_duck %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% arrange(desc(n)) %>% collect()
+consulta5
+toc()
+```
+
+
+# Cominación de duckdb y arrow
+
+
+```{r}
+df_personas <- open_dataset("parquet/personas")
+```
+
+Calcular el número de personas por municipio en arrow y el promedio de personas por municipio en duckdb:
+
+
+```{r}
+df_personas %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% ungroup() %>% to_duckdb() %>% summarise(promedio_mpio = mean(n))
+```
+
+```{r}
+df_personas %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% ungroup() %>% to_duckdb() %>% 
+  mutate(secuencia = row_number()) %>% collect()
+```
+```{r}
+df_personas %>% group_by(U_DPTO, U_MPIO) %>%
+  count() %>% ungroup() %>% 
+  mutate(secuencia = row_number())
+```
+
+
