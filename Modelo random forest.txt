@@ -1,0 +1,71 @@
+from pyspark.sql.functions import *
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.classification import RandomForestClassifier
+from pyspark.ml.classification import RandomForestClassificationModel
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+
+
+
+
+#read the dataset
+# Regresión logística
+ubica_archivo = '/FileStore/tables/affairs.csv'
+df = spark.read.csv(ubica_archivo, inferSchema = True, header = True)
+
+
+
+print((df.count(),len(df.columns)))
+
+
+df.describe().select('summary','rate_marriage','age','yrs_married','children','religious').show()
+
+
+df.groupBy('affairs').count().show()
+
+
+
+df.groupBy('rate_marriage').count().show()
+
+df.groupBy('rate_marriage','affairs').count().orderBy('rate_marriage','affairs','count',ascending=True).show()
+df.groupBy('religious','affairs').count().orderBy('religious','affairs','count',ascending=True).show()
+df.groupBy('children','affairs').count().orderBy('children','affairs','count',ascending=True).show()
+df.groupBy('affairs').mean().show()
+
+df_assembler = VectorAssembler(inputCols=['rate_marriage', 'age', 'yrs_married', 'children', 'religious'], outputCol="features")
+df = df_assembler.transform(df)
+
+
+df.printSchema()
+df.select(['features','affairs']).show(10,False)
+
+model_df=df.select(['features','affairs'])
+
+
+train_df,test_df=model_df.randomSplit([0.75,0.25])
+
+
+train_df.count()
+
+train_df.groupBy('affairs').count().show()
+test_df.groupBy('affairs').count().show()
+rf_classifier=RandomForestClassifier(labelCol='affairs',numTrees=50).fit(train_df)
+
+rf_predictions=rf_classifier.transform(test_df)
+rf_predictions.show()
+rf_predictions.groupBy('prediction').count().show()
+
+rf_accuracy=MulticlassClassificationEvaluator(labelCol='affairs',metricName='accuracy').evaluate(rf_predictions)
+rf_accuracy=MulticlassClassificationEvaluator(labelCol='affairs',metricName='accuracy').evaluate(rf_predictions)
+print('The accuracy of RF on test data is {0:.0%}'.format(rf_accuracy))
+rf_precision=MulticlassClassificationEvaluator(labelCol='affairs',metricName='weightedPrecision').evaluate(rf_predictions)
+print('The precision rate on test data is {0:.0%}'.format(rf_precision))
+rf_precision
+rf_auc=BinaryClassificationEvaluator(labelCol='affairs').evaluate(rf_predictions)
+print(rf_auc)
+rf_classifier.featureImportances
+df.schema["features"].metadata["ml_attr"]["attrs"]
+rf_classifier.save("/FileStore/tables/RF_model")
+rf=RandomForestClassificationModel.load("/FileStore/tables/RF_model")
+model_preditions=rf.transform(test_df)
+model_preditions.show()
