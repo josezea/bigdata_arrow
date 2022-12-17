@@ -1,0 +1,157 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: '2022-12-09'
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Con el censo de población 2018 elaboré los siguientes puntos con arrow:
+
+1. Calculé la tasa de hacinamiento por estrato socioeconómico. Crear Hacinamiento = total de personas / total de cuartos.
+
+
+
+```{r, warning=FALSE, message=FALSE}
+library(arrow)
+library(dplyr)
+library(flextable)
+```
+
+
+•	Seleccionar de la hogares id encuesta, tot cuartos
+•	Seleccionar de la vivienda el id encuestas, estrato
+
+```{r}
+censo_viviendas <- open_dataset("parquet/viviendas")
+censo_hogares <- open_dataset("parquet/hogares")
+censo_personas <- open_dataset("parquet/personas")
+```
+
+
+Seleccionamos de viviendas el identificador y el estrato, por otro lado del hogar seleccionamos el total de hogares y de cuartos.
+
+```{r}
+consulta1 <- left_join(censo_hogares %>%
+             select(COD_ENCUESTAS, H_NRO_CUARTOS, HA_TOT_PER),
+                    censo_viviendas %>% select(COD_ENCUESTAS, VA1_ESTRATO)) %>% 
+  group_by(VA1_ESTRATO) %>% summarise(total_personas = sum(HA_TOT_PER),
+                                      total_cuartos = sum(H_NRO_CUARTOS)) %>% 
+  ungroup() %>%
+  mutate(razon_hacinamiento = total_personas / total_cuartos) %>% collect() %>%
+  arrange(VA1_ESTRATO)
+```
+
+
+2.	Calculé el promedio del total de fallecidos por hogar en Bogotá, calcule lo anterior desagregado por estrato.
+
+
+```{r}
+consulta_2a <- censo_hogares %>% 
+            select(COD_ENCUESTAS, HA_TOT_PER, HA_NRO_FALL, U_DPTO) %>%
+            filter(U_DPTO == "11") %>%
+  summarise(tot_fallecidos = sum(HA_NRO_FALL, na.rm = T), 
+            tot_personas = sum(HA_TOT_PER, na.rm = T)) %>%
+  mutate(fallecidosXhogar = 1000 * tot_fallecidos / (tot_fallecidos + tot_personas)) %>%
+  collect()
+consulta_2a
+```
+
+Hay 3,4 personas fallecidas por cada 1000 personas en Bogotá, por estrato el análisis se presenta a continuación:
+
+```{r}
+consulta_2b <- left_join(censo_hogares %>% 
+            select(COD_ENCUESTAS, HA_TOT_PER, HA_NRO_FALL, U_DPTO) %>%
+            filter(U_DPTO == "11"),
+ censo_viviendas %>% select(COD_ENCUESTAS, VA1_ESTRATO)) %>%
+  group_by(VA1_ESTRATO) %>%
+  summarise(tot_fallecidos = sum(HA_NRO_FALL, na.rm = T), 
+            tot_personas = sum(HA_TOT_PER, na.rm = T)) %>% ungroup() %>%
+  mutate(fallecidosXhogar = 1000 * tot_fallecidos / (tot_fallecidos + tot_personas)) %>%
+  collect() %>% arrange(VA1_ESTRATO)
+consulta_2b
+```
+
+Los hogares sin estratos y el estrato 1 tienen una tasa de fallecidos mayor (de 3,9), seguido del estrato 3 en 3,66, los estratos 4, 5, y 6 tienen las menores tasas de fallecidos el último año.
+
+
+3.	Calcule los 10 municipios que tienen la mayor cobertura de servicios públicos (que tengan todos los siguientes servicios: energía eléctrica, acueducto, alcantarillado, recolección de basuras e internet)
+
+
+```{r}
+DIVIPOLA <- readxl::read_excel("DIVIPOLA.xlsx")
+DIVIPOLA$U_DPTO <- DIVIPOLA$codigo_departamento
+DIVIPOLA$U_MPIO <- substr(DIVIPOLA$codigo_municipio, 3, 5)
+```
+
+Los 10 municipios con mayor cobertura de servicios públicos son:
+```{r}
+consulta3 <- censo_viviendas %>% 
+  mutate(serv_publicos = as.numeric(
+    VA_EE == 1 & VB_ACU == 1 & VC_ALC == 1 & VE_RECBAS == 1 &  VF_INTERNET == 1)) %>%
+  group_by(U_DPTO, U_MPIO) %>% summarise(prop_serv_publicos = mean(serv_publicos, na.rm = T)) %>%
+  ungroup() %>% collect() %>% 
+  left_join(DIVIPOLA %>% select(U_DPTO, U_MPIO, nombre_departamento,  nombre_municipio),
+            by = c("U_DPTO", "U_MPIO")) %>%
+  arrange(desc(prop_serv_publicos)) %>% slice(1:10)
+consulta3
+```
+
+
+
+
+
+4.	Calcule los municipios que tienen mayor proporción de personas mayores de 29 años con posgrado. Coloque los 10 municipios con sus respectivas tasas.
+
+Los municipios con más tasas de posgrados:
+
+```{r}
+consulta4 <- censo_personas %>% filter(P_EDADR > 6) %>% 
+  mutate(posgrado = as.numeric(P_NIVEL_ANOSR == 9)) %>%
+  group_by(U_DPTO, U_MPIO) %>% summarise(prop_posgrado = mean(posgrado)) %>%
+  collect() %>%
+    left_join(DIVIPOLA %>% select(U_DPTO, U_MPIO, nombre_departamento,  nombre_municipio),
+            by = c("U_DPTO", "U_MPIO")) %>%
+  arrange(desc(prop_posgrado)) 
+  row.names(consulta4) <- NULL
+  consulta4[1:10,]
+```
+
+
+
+
+5.	Calcule la tasa de desocupación para las 5 principales ciudades en términos de población (sólo en su área urbana):
+
+```{r}
+ consulta5 <- right_join(censo_viviendas %>% 
+            select(COD_ENCUESTAS, UA_CLASE, U_DPTO, U_MPIO) %>%
+            filter(UA_CLASE == 1),
+ censo_personas %>% select(COD_ENCUESTAS, P_TRABAJO) %>% 
+   mutate(trabajo = as.numeric(P_TRABAJO %in% 1:3),
+                           noTrabajo = as.numeric(P_TRABAJO == 4),
+                           pobEconomActiva = as.numeric(P_TRABAJO %in% 1:4)) %>%
+   filter(pobEconomActiva == 1)) %>%
+   select(COD_ENCUESTAS, U_DPTO, U_MPIO, trabajo, noTrabajo) %>%
+  group_by(U_DPTO, U_MPIO) %>% summarise(total_ocupados = sum(trabajo),
+                                         total_desocupados = sum(noTrabajo)) %>%
+  ungroup() %>% 
+  mutate(tasa_desocupacion = total_desocupados / (total_ocupados + total_desocupados)) %>%
+  collect() %>%  
+  left_join(DIVIPOLA %>% select(U_DPTO, U_MPIO, nombre_departamento,  nombre_municipio,
+                                codigo_municipio),
+            by = c("U_DPTO", "U_MPIO")) %>%
+filter(codigo_municipio  %in% c("11001", "76001", "05001", "08001", "13001"))
+```
+
+Los 5 municipios con mayores tqaqsas de desocupación son:
+
+```{r}
+consulta5 %>% slice(1:5) %>% select(-U_DPTO, -U_MPIO, -total_ocupados, -total_desocupados)
+```
+
