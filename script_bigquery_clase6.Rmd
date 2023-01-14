@@ -1,0 +1,95 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: '2023-01-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(bigrquery)
+library(DBI)
+library(dbplyr)
+library(dplyr)
+```
+
+
+```{r}
+bigrquery::bq_auth(email = "jfzeac23@gmail.com", 
+                   path = "ejemplos-bigdata-edbf289c40af.json")
+```
+
+
+Conexión a las bases de datos:
+
+ejemplos-bigdata.ejemploJson.datosJson1
+
+```{r}
+nombre_proyecto <- "ejemplos-bigdata"
+con <- DBI::dbConnect(
+  bigquery(),
+  project = nombre_proyecto,
+  dataset = "ejemploJson",
+  billing = nombre_proyecto
+)
+```
+
+
+```{r}
+DBI::dbListTables(con)
+```
+
+la forma más simple de conectarse es:
+
+```{r}
+datosarmania_lazy <- tbl(con, "datos_armeenia")
+df_armenia <- datosarmania_lazy %>% collect() # Si la tabla es peqeña
+```
+
+Mejor práctica hacer collect cuando la consulta es pequeña
+```{r}
+consulta <- datosarmania_lazy %>% group_by(P_SEXO) %>%
+  summarise(N = n()) %>% collect()
+consulta
+```
+```{r}
+datosarmania_lazy %>% group_by(P_SEXO) %>%
+  summarise(N = n()) %>% show_query()
+```
+
+Podemos correr en R (pero ejecuta Bigquery) sintaxis propia
+de SQl (con sabor de bigquery)
+
+```{r}
+string_consulta <- "SELECT P_SEXO, count(*) AS N
+FROM `ejemplos-bigdata.ejemploJson.datos_armeenia`
+GROUP BY P_SEXO"
+consulta2_lz <- tbl(con, dbplyr::sql(string_consulta))
+consulta2_lz %>% collect()
+```
+```{r}
+consulta2_lz %>% count() %>% collect()
+```
+
+
+
+
+usar en dplyr funciones de sql:
+
+
+```{r}
+temp <- tbl(con, "datos_armeenia")
+consulta3 <- temp %>% group_by(P_SEXO) %>% 
+  summarise(promedio = sql("AVG(P_EDADR)")) %>% collect()
+consulta3
+```
+```{r}
+consulta3 <- temp %>% group_by(P_SEXO) %>% 
+  summarise(promedio = sql("AVG(P_EDADR)")) %>% show_query()
+```
+
