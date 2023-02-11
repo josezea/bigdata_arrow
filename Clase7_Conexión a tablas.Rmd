@@ -1,0 +1,206 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2023-02-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Generamos el esquema de una base de datos:
+
+
+```{r}
+library(stringr)
+library(dplyr)
+library(lubridate)
+data(iris)
+head(iris)
+# remotes::install_version("dbplyr", "2.1.1")
+```
+
+
+```{r}
+str(iris)
+```
+```{r}
+iris2 = iris
+```
+
+```{r}
+#setwd("F:/Laboral 2023/Big data Externado/clase8")
+iris2$id <-  str_pad(as.character(1:nrow(iris2)), width = 3, side = "left", pad = "0")
+iris2 <- relocate(iris2, id)
+iris2$fecha <- lubridate::today()
+iris2$medidoInstrumentoDigital = c(rep(TRUE, 75), rep(F, 75))
+iris2$secuencia <- 1:nrow(iris2)
+```
+
+
+```{r}
+str(iris2)
+```
+
+```{r}
+write.csv(iris2, "iris.csv", row.names = F, quote = F)
+```
+
+Cambiar en los nombres con punto por _ y especificar en opciones avanzadas que el encabezado está en la primera fila.
+El esquema se puede generar como sigue:
+
+
+[
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Identificador único"
+  },
+  {
+    "name": "Sepal_Length",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Longitud sepalo"
+  },
+  {
+    "name": "Sepal_Width",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "Petal_Length",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "Petal_Width",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "Species",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "fecha",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "medidoInstrumentoDigital",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "secuencia",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  }]
+  
+  
+  
+En R nos podemos conectar a esta tabla como sigue:
+
+```{r}
+dir()
+```
+
+Generaremos el formato json:
+
+```{r}
+library(pacman)
+p_load(dplyr, DBI, bigrquery, dbplyr, remotes, bit64, flextable)
+
+bigrquery::bq_auth(email = "jfzeac2023@gmail.com", "ejemplos-bigdata-57a6f9cbafe8.json")
+con <- DBI::dbConnect(
+    bigquery(),
+    project = "ejemplos-bigdata",
+    dataset = "censo_colombia",
+    billing = "ejemplos-bigdata",
+    bigint = "integer64",
+    use_legacy_sql = FALSE,
+     )
+
+```
+
+
+```{r}
+bigrquery::list_tables(project = "ejemplos-bigdata", dataset = "censo_colombia")
+```
+
+Leemos la tabla que acabamos de configurar:
+
+```{r}
+iris_lazy <- tbl(con, "iris") 
+iris3 <- iris_lazy %>% collect()
+```
+
+
+  
+  En R se puede generar automáticamente como sigue:
+  
+```{r}
+library(bigrquery)
+```
+  
+  
+```{r}
+nombres <- names(iris)
+clase <- as.character(unlist(sapply(iris, class))) 
+```
+  
+```{r}
+clase[clase == "numeric"] <- "FLOAT"
+clase[clase == "character"] <- "STRING"
+clase[clase == "Date"] <- "DATE"
+clase[clase == "logical"] <- "BOOLEAN"
+clase[clase == "integer"] <- "INTEGER"
+```
+
+```{r}
+modo <- c("REQUIRED", rep("REQUIRED", 8 ))
+```
+  
+  
+```{r}
+schema <- list()
+
+# Loop through the name and type vectors and add each field to the schema list
+for (i in 1:length(nombres)) {
+  field <- list(name = nombres[i], type = clase[i], mode = modo[i])
+  schema <- c(schema, list(field))
+}
+```
+  
+  
+Convertirlo a un json:
+
+```{r}
+library(jsonlite)
+schema_json <- toJSON(list(fields = schema), auto_unbox = TRUE)
+```
+
+
+```{r}
+iris2 <- iris
+names(iris2) <- gsub(".", "_", names(iris2))
+```
+
+
+
+
+# Leer google analytics
+
+```{r}
+ga_20170101_lz <- tbl(con, "bigquery-public-data.google_analytics_sample.ga_sessions_20170101")
+```
+
+
+```{r}
+ga_20170101_lz %>% collect()
+```
+
